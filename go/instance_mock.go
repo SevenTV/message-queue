@@ -12,10 +12,12 @@ type InstanceMock struct {
 	mtx  sync.Mutex
 	msgs map[string][]*IncomingMessage
 
-	once      sync.Once
-	shutdown  chan struct{}
-	stopped   bool
-	connected bool
+	once     sync.Once
+	shutdown chan struct{}
+
+	shutdownMtx sync.Mutex
+	stopped     bool
+	connected   bool
 }
 
 func NewMock(ctx context.Context, cfg ConfigMock) (Instance, error) {
@@ -28,14 +30,24 @@ func NewMock(ctx context.Context, cfg ConfigMock) (Instance, error) {
 }
 
 func (i *InstanceMock) SetConnected(connected bool) {
+	i.shutdownMtx.Lock()
+	defer i.shutdownMtx.Unlock()
+
 	i.connected = connected
 }
 
 func (i *InstanceMock) Connected(ctx context.Context) bool {
+	i.shutdownMtx.Lock()
+	defer i.shutdownMtx.Unlock()
+
 	return !i.stopped && i.connected
 }
 
 func (i *InstanceMock) Subscribe(ctx context.Context, sub Subscription) (<-chan *IncomingMessage, error) {
+	if !i.Connected(ctx) {
+		return nil, ErrNotReady
+	}
+
 	msgQueue := make(chan *IncomingMessage, sub.BufferSize)
 
 	go func() {
@@ -48,6 +60,10 @@ func (i *InstanceMock) Subscribe(ctx context.Context, sub Subscription) (<-chan 
 			case <-i.shutdown:
 				return
 			case <-time.After(time.Millisecond * 50):
+				if !i.Connected(ctx) {
+					return
+				}
+
 				i.mtx.Lock()
 				if len(i.msgs[sub.Queue]) > 0 {
 					msg := i.msgs[sub.Queue][0]
@@ -66,7 +82,7 @@ func (i *InstanceMock) Subscribe(ctx context.Context, sub Subscription) (<-chan 
 }
 
 func (i *InstanceMock) Publish(ctx context.Context, msg OutgoingMessage) error {
-	if i.stopped {
+	if !i.Connected(ctx) {
 		return ErrNotReady
 	}
 
@@ -96,17 +112,33 @@ func (i *InstanceMock) Shutdown(ctx context.Context) error {
 }
 
 func (i *InstanceMock) ack(ctx context.Context, msg *IncomingMessage) error {
+	if !i.Connected(ctx) {
+		return ErrNotReady
+	}
+
 	return nil
 }
 
 func (i *InstanceMock) nack(ctx context.Context, msg *IncomingMessage) error {
+	if !i.Connected(ctx) {
+		return ErrNotReady
+	}
+
 	return nil
 }
 
 func (i *InstanceMock) requeue(ctx context.Context, msg *IncomingMessage) error {
+	if !i.Connected(ctx) {
+		return ErrNotReady
+	}
+
 	return nil
 }
 
 func (i *InstanceMock) extend(ctx context.Context, msg *IncomingMessage, duration time.Duration) error {
+	if !i.Connected(ctx) {
+		return ErrNotReady
+	}
+
 	return nil
 }

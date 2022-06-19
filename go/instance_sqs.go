@@ -17,7 +17,9 @@ type InstanceSQS struct {
 
 	once     sync.Once
 	shutdown chan struct{}
-	stopped  bool
+
+	mtx     sync.Mutex
+	stopped bool
 }
 
 func NewSQS(ctx context.Context, cfg ConfigSQS) (Instance, error) {
@@ -33,7 +35,10 @@ func NewSQS(ctx context.Context, cfg ConfigSQS) (Instance, error) {
 }
 
 func (i *InstanceSQS) Connected(ctx context.Context) bool {
-	return true
+	i.mtx.Lock()
+	defer i.mtx.Unlock()
+
+	return i.stopped
 }
 
 func (i *InstanceSQS) Subscribe(ctx context.Context, sub Subscription) (<-chan *IncomingMessage, error) {
@@ -141,6 +146,9 @@ func (i *InstanceSQS) Publish(ctx context.Context, msg OutgoingMessage) error {
 
 func (i *InstanceSQS) Shutdown(ctx context.Context) error {
 	i.once.Do(func() {
+		i.mtx.Lock()
+		defer i.mtx.Unlock()
+
 		i.stopped = true
 		close(i.shutdown)
 	})
