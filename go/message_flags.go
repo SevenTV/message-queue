@@ -20,6 +20,7 @@ type MessageFlags struct {
 	ContentEncoding string
 	ReplyTo         string
 	Timestamp       time.Time
+	IsBinary        bool
 
 	RMQ MessageFlagsRMQ
 	SQS MessageFlagsSQS

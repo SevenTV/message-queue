@@ -1,6 +1,10 @@
 package messagequeue
 
-import "time"
+import (
+	"fmt"
+	"strconv"
+	"time"
+)
 
 type MessageHeaders map[string]string
 
@@ -10,6 +14,7 @@ const (
 	MessageHeaderContentType     = "MessageQueue.ContentType"
 	MessageHeaderContentEncoding = "MessageQueue.ContentEncoding"
 	MessageHeaderID              = "MessageQueue.ID"
+	MessageHeaderIsBinary        = "MessageQueue.IsBinary"
 )
 
 func (m MessageHeaders) ReplyTo() string {
@@ -33,6 +38,11 @@ func (m MessageHeaders) ID() string {
 	return m[MessageHeaderID]
 }
 
+func (m MessageHeaders) IsBinary() bool {
+	b, _ := strconv.ParseBool(m[MessageHeaderIsBinary])
+	return b
+}
+
 func (m MessageHeaders) SetReplyTo(value string) {
 	m[MessageHeaderReplyTo] = value
 }
@@ -51,4 +61,8 @@ func (m MessageHeaders) SetContentEncoding(value string) {
 
 func (m MessageHeaders) SetID(value string) {
 	m[MessageHeaderID] = value
+}
+
+func (m MessageHeaders) SetIsBinary(value bool) {
+	m[MessageHeaderIsBinary] = fmt.Sprint(value)
 }

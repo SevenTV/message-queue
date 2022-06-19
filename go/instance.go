@@ -16,6 +16,9 @@ type Instance interface {
 	// Connected returns true if the connection is ready
 	Connected(ctx context.Context) bool
 
+	// Error is the instance has failed
+	Error() error
+
 	// InternalMethods
 	ack(ctx context.Context, msg *IncomingMessage) error
 	nack(ctx context.Context, msg *IncomingMessage) error

@@ -3,6 +3,7 @@ module github.com/seventv/message-queue/go
 go 1.18
 
 require (
+	github.com/aws/aws-sdk-go v1.44.37
 	github.com/aws/aws-sdk-go-v2 v1.16.5
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.18.6
 	github.com/rabbitmq/amqp091-go v1.3.4

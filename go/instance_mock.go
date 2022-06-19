@@ -29,6 +29,10 @@ func NewMock(ctx context.Context, cfg ConfigMock) (Instance, error) {
 	}, nil
 }
 
+func (i *InstanceMock) Error() error {
+	return nil
+}
+
 func (i *InstanceMock) SetConnected(connected bool) {
 	i.shutdownMtx.Lock()
 	defer i.shutdownMtx.Unlock()
@@ -89,6 +93,10 @@ func (i *InstanceMock) Publish(ctx context.Context, msg OutgoingMessage) error {
 	i.mtx.Lock()
 	defer i.mtx.Unlock()
 
+	if msg.Flags.Timestamp.IsZero() {
+		msg.Flags.Timestamp = time.Now()
+	}
+
 	i.msgs[msg.Queue] = append(i.msgs[msg.Queue], &IncomingMessage{
 		inst:    i,
 		queue:   msg.Queue,
@@ -103,6 +111,9 @@ func (i *InstanceMock) Publish(ctx context.Context, msg OutgoingMessage) error {
 }
 
 func (i *InstanceMock) Shutdown(ctx context.Context) error {
+	i.shutdownMtx.Lock()
+	defer i.shutdownMtx.Unlock()
+
 	i.once.Do(func() {
 		i.stopped = true
 		close(i.shutdown)

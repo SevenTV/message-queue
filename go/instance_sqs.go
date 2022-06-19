@@ -2,7 +2,11 @@ package messagequeue
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,14 +38,22 @@ func NewSQS(ctx context.Context, cfg ConfigSQS) (Instance, error) {
 	}, nil
 }
 
+func (i *InstanceSQS) Error() error {
+	return nil
+}
+
 func (i *InstanceSQS) Connected(ctx context.Context) bool {
 	i.mtx.Lock()
 	defer i.mtx.Unlock()
 
-	return i.stopped
+	return !i.stopped
 }
 
 func (i *InstanceSQS) Subscribe(ctx context.Context, sub Subscription) (<-chan *IncomingMessage, error) {
+	if !i.Connected(ctx) {
+		return nil, ErrNotReady
+	}
+
 	msgQueue := make(chan *IncomingMessage, sub.BufferSize)
 
 	qurl, err := i.client.GetQueueUrl(ctx, &sqs.GetQueueUrlInput{
@@ -62,6 +74,13 @@ func (i *InstanceSQS) Subscribe(ctx context.Context, sub Subscription) (<-chan *
 				return
 			default:
 			}
+			if len(sub.SQS.AttributeNames) == 0 {
+				sub.SQS.AttributeNames = append(sub.SQS.AttributeNames, types.QueueAttributeNameAll)
+			}
+			if len(sub.SQS.MessageAttributeNames) == 0 {
+				sub.SQS.MessageAttributeNames = append(sub.SQS.MessageAttributeNames, "*")
+			}
+
 			msg, err := i.client.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
 				VisibilityTimeout:     sub.SQS.VisibilityTimeout,
 				MaxNumberOfMessages:   sub.SQS.MaxNumberOfMessages,
@@ -76,7 +95,7 @@ func (i *InstanceSQS) Subscribe(ctx context.Context, sub Subscription) (<-chan *
 			}
 
 			for _, v := range msg.Messages {
-				headers := map[string]string{}
+				headers := MessageHeaders{}
 				for k, v := range v.MessageAttributes {
 					if v.StringValue != nil {
 						headers[k] = *v.StringValue
@@ -88,14 +107,31 @@ func (i *InstanceSQS) Subscribe(ctx context.Context, sub Subscription) (<-chan *
 					headers[k] = v
 				}
 
+				body := *v.Body
+				if headers.IsBinary() {
+					data, err := base64.StdEncoding.DecodeString(body)
+					if err != nil {
+						msgQueue <- &IncomingMessage{err: err}
+						continue
+					}
+					body = string(data)
+				}
+
 				msgQueue <- &IncomingMessage{
 					id:      *v.MessageId,
 					inst:    i,
 					queue:   *qurl.QueueUrl,
 					headers: headers,
-					body:    []byte(*v.Body),
-					flags:   MessageFlags{},
-					raw:     v,
+					body:    []byte(body),
+					flags: MessageFlags{
+						ID:              headers.ID(),
+						ContentType:     headers.ContentType(),
+						ContentEncoding: headers.ContentEncoding(),
+						ReplyTo:         headers.ReplyTo(),
+						Timestamp:       headers.Timestamp(),
+						IsBinary:        headers.IsBinary(),
+					},
+					raw: v,
 				}
 			}
 
@@ -106,7 +142,7 @@ func (i *InstanceSQS) Subscribe(ctx context.Context, sub Subscription) (<-chan *
 }
 
 func (i *InstanceSQS) Publish(ctx context.Context, msg OutgoingMessage) error {
-	if i.stopped {
+	if !i.Connected(ctx) {
 		return ErrNotReady
 	}
 
@@ -117,9 +153,14 @@ func (i *InstanceSQS) Publish(ctx context.Context, msg OutgoingMessage) error {
 		return err
 	}
 
+	if msg.Flags.Timestamp.IsZero() {
+		msg.Flags.Timestamp = time.Now()
+	}
+
 	msg.Headers.SetContentEncoding(msg.Flags.ContentEncoding)
 	msg.Headers.SetContentType(msg.Flags.ContentType)
 	msg.Headers.SetTimestamp(msg.Flags.Timestamp)
+	msg.Headers.SetIsBinary(msg.Flags.IsBinary)
 	msg.Headers.SetReplyTo(msg.Flags.ReplyTo)
 	msg.Headers.SetID(msg.Flags.ID)
 
@@ -129,6 +170,26 @@ func (i *InstanceSQS) Publish(ctx context.Context, msg OutgoingMessage) error {
 			DataType:    aws.String("String"),
 			StringValue: aws.String(v),
 		}
+	}
+
+	// these queues require a few extra paramaters
+	if strings.HasSuffix(msg.Queue, ".fifo") {
+		if msg.Flags.SQS.MessageGroupId == nil {
+			msg.Flags.SQS.MessageGroupId = aws.String("default")
+		}
+		if msg.Flags.SQS.MessageDeduplicationId == nil {
+			if msg.Flags.ID == "" {
+				bytes := make([]byte, 5)
+				_, _ = rand.Read(bytes)
+				msg.Flags.SQS.MessageDeduplicationId = aws.String(fmt.Sprintf("default-%d-%s", time.Now().UnixNano(), hex.EncodeToString(bytes)))
+			} else {
+				msg.Flags.SQS.MessageDeduplicationId = aws.String(msg.Flags.ID)
+			}
+		}
+	}
+
+	if msg.Flags.IsBinary {
+		msg.Body = []byte(base64.StdEncoding.EncodeToString(msg.Body))
 	}
 
 	_, err = i.client.SendMessage(ctx, &sqs.SendMessageInput{
@@ -157,6 +218,10 @@ func (i *InstanceSQS) Shutdown(ctx context.Context) error {
 }
 
 func (i *InstanceSQS) ack(ctx context.Context, msg *IncomingMessage) error {
+	if !i.Connected(ctx) {
+		return ErrNotReady
+	}
+
 	delivery, ok := msg.raw.(types.Message)
 	if !ok {
 		return ErrUnknownMessageType
@@ -171,20 +236,14 @@ func (i *InstanceSQS) ack(ctx context.Context, msg *IncomingMessage) error {
 }
 
 func (i *InstanceSQS) nack(ctx context.Context, msg *IncomingMessage) error {
-	delivery, ok := msg.raw.(types.Message)
-	if !ok {
-		return ErrUnknownMessageType
-	}
-
-	_, err := i.client.DeleteMessage(ctx, &sqs.DeleteMessageInput{
-		QueueUrl:      &msg.queue,
-		ReceiptHandle: delivery.ReceiptHandle,
-	})
-
-	return err
+	return i.ack(ctx, msg)
 }
 
 func (i *InstanceSQS) requeue(ctx context.Context, msg *IncomingMessage) error {
+	if !i.Connected(ctx) {
+		return ErrNotReady
+	}
+
 	delivery, ok := msg.raw.(types.Message)
 	if !ok {
 		return ErrUnknownMessageType
@@ -200,6 +259,10 @@ func (i *InstanceSQS) requeue(ctx context.Context, msg *IncomingMessage) error {
 }
 
 func (i *InstanceSQS) extend(ctx context.Context, msg *IncomingMessage, duration time.Duration) error {
+	if !i.Connected(ctx) {
+		return ErrNotReady
+	}
+
 	delivery, ok := msg.raw.(types.Message)
 	if !ok {
 		return ErrUnknownMessageType
