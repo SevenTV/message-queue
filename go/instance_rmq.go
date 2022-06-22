@@ -216,11 +216,6 @@ func (i *InstanceRMQ) Publish(ctx context.Context, msg OutgoingMessage) error {
 		return ErrNotReady
 	}
 
-	headers := amqp091.Table{}
-	for k, v := range msg.Headers {
-		headers[k] = v
-	}
-
 	if msg.Headers == nil {
 		msg.Headers = MessageHeaders{}
 	}
@@ -238,6 +233,11 @@ func (i *InstanceRMQ) Publish(ctx context.Context, msg OutgoingMessage) error {
 
 	if msg.Flags.IsBinary {
 		msg.Body = []byte(base64.StdEncoding.EncodeToString(msg.Body))
+	}
+
+	headers := amqp091.Table{}
+	for k, v := range msg.Headers {
+		headers[k] = v
 	}
 
 	return i.channel.Publish(msg.Flags.RMQ.Exchange, msg.Queue, msg.Flags.RMQ.Mandatory, msg.Flags.RMQ.Immediate, amqp091.Publishing{
