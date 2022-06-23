@@ -157,6 +157,10 @@ func (i *InstanceSQS) Publish(ctx context.Context, msg OutgoingMessage) error {
 		msg.Flags.Timestamp = time.Now()
 	}
 
+	if msg.Headers == nil {
+		msg.Headers = MessageHeaders{}
+	}
+
 	msg.Headers.SetContentEncoding(msg.Flags.ContentEncoding)
 	msg.Headers.SetContentType(msg.Flags.ContentType)
 	msg.Headers.SetTimestamp(msg.Flags.Timestamp)
