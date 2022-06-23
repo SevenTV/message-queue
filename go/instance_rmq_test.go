@@ -140,3 +140,57 @@ loop2:
 
 	cancel()
 }
+
+func TestRMQSubscribeLong(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	inst, err := New(ctx, ConfigRMQ{
+		AmqpURI:              "amqp://user:bitnami@localhost:5672/",
+		MaxReconnectAttempts: -1,
+	})
+	test_utils.IsNil(t, err, "RMQ instance was made successfully")
+
+	test_utils.Assert(t, true, inst.Connected(ctx), "RMQ connected successfully")
+
+	b := []byte{1, 2, 3, 4, 5, 6}
+	test_utils.IsNil(t, inst.Publish(ctx, OutgoingMessage{
+		Queue: "abc",
+		Body:  b,
+		Flags: MessageFlags{
+			ContentType:     "binary",
+			ID:              "1223",
+			ContentEncoding: "xd",
+			ReplyTo:         "xdd",
+			Timestamp:       time.Now(),
+			IsBinary:        true,
+		},
+		Headers: MessageHeaders{
+			"abc": "123",
+		},
+	}), "Message published successfully")
+	lCtx, lCancel := context.WithCancel(ctx)
+	msgs, err := inst.Subscribe(lCtx, Subscription{
+		Queue: "abc",
+	})
+	test_utils.IsNil(t, err, "Subscribe was successful")
+	var msg *IncomingMessage
+	select {
+	case msg = <-msgs:
+		h := sha256.New()
+		h.Write(b)
+		hash := hex.EncodeToString(h.Sum(nil))
+		h.Reset()
+		h.Write(msg.body)
+		msgHash := hex.EncodeToString(h.Sum(nil))
+		test_utils.Assert(t, hash, msgHash, "The message content is the same")
+	case <-time.After(time.Millisecond * 100):
+		t.Fatal("message was not recieved in time")
+	}
+
+	time.Sleep(time.Second * 5)
+
+	err = msg.Ack(ctx)
+	test_utils.IsNil(t, err, "ack was successful")
+
+	lCancel()
+	cancel()
+}

@@ -139,8 +139,8 @@ func (i *InstanceRMQ) Subscribe(ctx context.Context, sub Subscription) (<-chan *
 	}
 
 	msgQueue := make(chan *IncomingMessage, sub.BufferSize)
-	tick := time.NewTicker(time.Millisecond * 50)
 
+	tick := time.NewTicker(time.Millisecond * 50)
 	go func() {
 		defer ch.Close()
 		defer tick.Stop()
@@ -150,8 +150,6 @@ func (i *InstanceRMQ) Subscribe(ctx context.Context, sub Subscription) (<-chan *
 				return
 			case <-i.shutdown:
 				return
-			case <-i.ready:
-				return
 			case <-tick.C:
 				if ch.IsClosed() {
 					return
@@ -159,9 +157,11 @@ func (i *InstanceRMQ) Subscribe(ctx context.Context, sub Subscription) (<-chan *
 			}
 		}
 	}()
+
 	go func() {
 		defer ch.Close()
 		defer close(msgQueue)
+		defer panic(1)
 
 		for msg := range delivery {
 			headers := MessageHeaders{}
@@ -203,7 +203,7 @@ func (i *InstanceRMQ) Subscribe(ctx context.Context, sub Subscription) (<-chan *
 						AppId:         msg.AppId,
 					},
 				},
-				raw: msg,
+				raw: &msg,
 			}
 		}
 	}()
@@ -276,7 +276,7 @@ func (i *InstanceRMQ) ack(ctx context.Context, msg *IncomingMessage) error {
 		return ErrNotReady
 	}
 
-	delivery, ok := msg.raw.(amqp091.Delivery)
+	delivery, ok := msg.raw.(*amqp091.Delivery)
 	if !ok {
 		return ErrUnknownMessageType
 	}
@@ -289,7 +289,7 @@ func (i *InstanceRMQ) nack(ctx context.Context, msg *IncomingMessage) error {
 		return ErrNotReady
 	}
 
-	delivery, ok := msg.raw.(amqp091.Delivery)
+	delivery, ok := msg.raw.(*amqp091.Delivery)
 	if !ok {
 		return ErrUnknownMessageType
 	}
@@ -302,7 +302,7 @@ func (i *InstanceRMQ) requeue(ctx context.Context, msg *IncomingMessage) error {
 		return ErrNotReady
 	}
 
-	delivery, ok := msg.raw.(amqp091.Delivery)
+	delivery, ok := msg.raw.(*amqp091.Delivery)
 	if !ok {
 		return ErrUnknownMessageType
 	}
