@@ -161,7 +161,6 @@ func (i *InstanceRMQ) Subscribe(ctx context.Context, sub Subscription) (<-chan *
 	go func() {
 		defer ch.Close()
 		defer close(msgQueue)
-		defer panic(1)
 
 		for msg := range delivery {
 			headers := MessageHeaders{}
