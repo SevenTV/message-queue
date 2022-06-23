@@ -17,6 +17,14 @@ const (
 	MessageHeaderIsBinary        = "MessageQueue.IsBinary"
 )
 
+func (m MessageHeaders) Harden() {
+	for k, v := range m {
+		if v == "" {
+			delete(m, k)
+		}
+	}
+}
+
 func (m MessageHeaders) ReplyTo() string {
 	return m[MessageHeaderReplyTo]
 }

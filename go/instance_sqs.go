@@ -163,6 +163,7 @@ func (i *InstanceSQS) Publish(ctx context.Context, msg OutgoingMessage) error {
 	msg.Headers.SetIsBinary(msg.Flags.IsBinary)
 	msg.Headers.SetReplyTo(msg.Flags.ReplyTo)
 	msg.Headers.SetID(msg.Flags.ID)
+	msg.Headers.Harden()
 
 	headers := map[string]types.MessageAttributeValue{}
 	for k, v := range msg.Headers {

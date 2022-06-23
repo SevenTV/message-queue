@@ -230,6 +230,7 @@ func (i *InstanceRMQ) Publish(ctx context.Context, msg OutgoingMessage) error {
 	msg.Headers.SetIsBinary(msg.Flags.IsBinary)
 	msg.Headers.SetReplyTo(msg.Flags.ReplyTo)
 	msg.Headers.SetID(msg.Flags.ID)
+	msg.Headers.Harden()
 
 	if msg.Flags.IsBinary {
 		msg.Body = []byte(base64.StdEncoding.EncodeToString(msg.Body))

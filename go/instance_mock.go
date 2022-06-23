@@ -97,6 +97,8 @@ func (i *InstanceMock) Publish(ctx context.Context, msg OutgoingMessage) error {
 		msg.Flags.Timestamp = time.Now()
 	}
 
+	msg.Headers.Harden()
+
 	i.msgs[msg.Queue] = append(i.msgs[msg.Queue], &IncomingMessage{
 		inst:    i,
 		queue:   msg.Queue,
