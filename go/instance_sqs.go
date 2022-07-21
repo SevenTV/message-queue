@@ -257,7 +257,7 @@ func (i *InstanceSQS) requeue(ctx context.Context, msg *IncomingMessage) error {
 	_, err := i.client.ChangeMessageVisibility(ctx, &sqs.ChangeMessageVisibilityInput{
 		QueueUrl:          &msg.queue,
 		ReceiptHandle:     delivery.ReceiptHandle,
-		VisibilityTimeout: 0,
+		VisibilityTimeout: 5,
 	})
 
 	return err
