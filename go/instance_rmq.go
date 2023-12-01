@@ -162,7 +162,9 @@ func (i *InstanceRMQ) Subscribe(ctx context.Context, sub Subscription) (<-chan *
 		defer ch.Close()
 		defer close(msgQueue)
 
-		for msg := range delivery {
+		for message := range delivery {
+			msg := message
+
 			headers := MessageHeaders{}
 			for k, v := range msg.Headers {
 				headers[k] = fmt.Sprint(v)
